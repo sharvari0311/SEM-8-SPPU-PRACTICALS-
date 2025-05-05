@@ -135,3 +135,185 @@ int main() {
 
 
 g++ -fopenmp program.cpp -o program
+
+
+adjancency matrix
+
+
+#include <iostream>
+#include <vector>
+#include <queue>
+#include <omp.h>
+#include <functional>
+using namespace std;
+
+class Node {
+public:
+    int data;
+    Node *left;
+    Node *right;
+
+    Node(int val) {
+        data = val;
+        left = right = nullptr;
+    }
+};
+
+// Function to create a node and return the pointer
+Node* createNode(int val) {
+    return new Node(val);
+}
+
+// Create an adjacency matrix based on input
+vector<vector<int>> createAdjacencyMatrix(int n, const vector<pair<int, int>>& edges) {
+    vector<vector<int>> adjMatrix(n, vector<int>(n, 0));
+
+    // Add edges to the adjacency matrix
+    for (const auto& edge : edges) {
+        int u = edge.first;
+        int v = edge.second;
+        adjMatrix[u][v] = 1;
+        adjMatrix[v][u] = 1;  // Assuming it's an undirected graph
+    }
+
+    return adjMatrix;
+}
+
+// Sequential BFS using adjacency matrix
+void bfsSequential(const vector<vector<int>>& adjMatrix, int start, int n) {
+    vector<bool> visited(n, false);
+    queue<int> q;
+    q.push(start);
+    visited[start] = true;
+
+    while (!q.empty()) {
+        int node = q.front();
+        q.pop();
+        cout << node << " ";
+
+        for (int i = 0; i < n; i++) {
+            if (adjMatrix[node][i] == 1 && !visited[i]) {
+                q.push(i);
+                visited[i] = true;
+            }
+        }
+    }
+    cout << endl;
+}
+
+// Parallel BFS using adjacency matrix
+void bfsParallel(const vector<vector<int>>& adjMatrix, int start, int n) {
+    vector<bool> visited(n, false);
+    queue<int> q;
+    q.push(start);
+    visited[start] = true;
+
+    while (!q.empty()) {
+        int size = q.size();
+        vector<int> levelNodes;
+
+        // Collect current level nodes
+        for (int i = 0; i < size; i++) {
+            int node = q.front(); q.pop();
+            levelNodes.push_back(node);
+        }
+
+        // Process current level in parallel
+        #pragma omp parallel for
+        for (int i = 0; i < levelNodes.size(); i++) {
+            cout << levelNodes[i] << " ";
+        }
+
+        // Enqueue next level
+        for (auto node : levelNodes) {
+            for (int i = 0; i < n; i++) {
+                if (adjMatrix[node][i] == 1 && !visited[i]) {
+                    q.push(i);
+                    visited[i] = true;
+                }
+            }
+        }
+    }
+    cout << endl;
+}
+
+// Sequential DFS (preorder) using adjacency matrix
+void dfsSequential(const vector<vector<int>>& adjMatrix, int node, vector<bool>& visited, int n) {
+    visited[node] = true;
+    cout << node << " ";
+
+    for (int i = 0; i < n; i++) {
+        if (adjMatrix[node][i] == 1 && !visited[i]) {
+            dfsSequential(adjMatrix, i, visited, n);
+        }
+    }
+}
+
+// Parallel DFS (preorder) using adjacency matrix
+void dfsParallel(const vector<vector<int>>& adjMatrix, int node, vector<bool>& visited, int n) {
+    visited[node] = true;
+    cout << node << " ";
+
+    #pragma omp parallel sections
+    {
+        #pragma omp section
+        for (int i = 0; i < n; i++) {
+            if (adjMatrix[node][i] == 1 && !visited[i]) {
+                dfsParallel(adjMatrix, i, visited, n);
+            }
+        }
+    }
+}
+
+int main() {
+    int n, e;
+    
+    // Take number of nodes (vertices) and edges as input
+    cout << "Enter number of nodes in the tree: ";
+    cin >> n;
+    
+    cout << "Enter number of edges: ";
+    cin >> e;
+    
+    vector<pair<int, int>> edges;
+    
+    cout << "Enter the edges (each edge is a pair of nodes):\n";
+    for (int i = 0; i < e; i++) {
+        int u, v;
+        cin >> u >> v;
+        edges.push_back({u, v});
+    }
+    
+    // Create adjacency matrix from the input edges
+    vector<vector<int>> adjMatrix = createAdjacencyMatrix(n, edges);
+
+    double start, end;
+
+    cout << "\nSequential BFS: ";
+    start = omp_get_wtime();
+    bfsSequential(adjMatrix, 0, n);  // Start BFS from node 0
+    end = omp_get_wtime();
+    cout << "Time: " << end - start << " seconds\n";
+
+    cout << "\nParallel BFS: ";
+    start = omp_get_wtime();
+    bfsParallel(adjMatrix, 0, n);  // Start Parallel BFS from node 0
+    end = omp_get_wtime();
+    cout << "Time: " << end - start << " seconds\n";
+
+    vector<bool> visited(n, false);
+    cout << "\nSequential DFS (Preorder): ";
+    start = omp_get_wtime();
+    dfsSequential(adjMatrix, 0, visited, n);  // Start DFS from node 0
+    end = omp_get_wtime();
+    cout << "\nTime: " << end - start << " seconds\n";
+
+    fill(visited.begin(), visited.end(), false);  // Reset visited array for parallel DFS
+    cout << "\nParallel DFS (Preorder): ";
+    start = omp_get_wtime();
+    dfsParallel(adjMatrix, 0, visited, n);  // Start Parallel DFS from node 0
+    end = omp_get_wtime();
+    cout << "\nTime: " << end - start << " seconds\n";
+
+    return 0;
+}
