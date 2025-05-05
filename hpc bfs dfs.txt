@@ -1,0 +1,137 @@
+#include <iostream>
+#include <vector>
+#include <queue>
+#include <omp.h>
+using namespace std;
+
+class Node {
+public:
+    int data;
+    Node *left;
+    Node *right;
+
+    Node(int val) {
+        data = val;
+        left = right = nullptr;
+    }
+};
+
+// Sequential BFS
+void bfsSequential(Node* root) {
+    if (!root) return;
+    queue<Node*> q;
+    q.push(root);
+
+    while (!q.empty()) {
+        Node* curr = q.front();
+        q.pop();
+        cout << curr->data << " ";
+
+        if (curr->left) q.push(curr->left);
+        if (curr->right) q.push(curr->right);
+    }
+    cout << endl;
+}
+
+// Parallel BFS
+void bfsParallel(Node* root) {
+    if (!root) return;
+    queue<Node*> q;
+    q.push(root);
+
+    while (!q.empty()) {
+        int size = q.size();
+        vector<Node*> levelNodes;
+
+        // Collect current level node
+        
+        for (int i = 0; i < size; i++) {
+            Node* curr = q.front(); q.pop();
+            levelNodes.push_back(curr);
+        }
+
+        // Process current level in parallel
+        #pragma omp parallel for
+        for (int i = 0; i < levelNodes.size(); i++) {
+            cout << levelNodes[i]->data << " ";
+        }
+
+        // Enqueue next level
+        for (auto node : levelNodes) {
+            if (node->left) q.push(node->left);
+            if (node->right) q.push(node->right);
+        }
+    }
+    cout << endl;
+}
+
+// Sequential DFS (preorder)
+void dfsSequential(Node* root) {
+    if (!root) return;
+    cout << root->data << " ";
+    dfsSequential(root->left);
+    dfsSequential(root->right);
+}
+
+// Parallel DFS (preorder with parallel recursive calls)
+void dfsParallel(Node* root) {
+    if (!root) return;
+
+    cout << root->data << " ";
+
+    #pragma omp parallel sections
+    {
+        #pragma omp section
+        dfsParallel(root->left);
+
+        #pragma omp section
+        dfsParallel(root->right);
+    }
+}
+
+// Utility to create a sample tree
+Node* createSampleTree() {
+    Node* root = new Node(1);
+    root->left = new Node(2);
+    root->right = new Node(3);
+    root->left->left = new Node(4);
+    root->left->right = new Node(5);
+    root->right->left = new Node(6);
+    root->right->right = new Node(7);
+    return root;
+}
+
+int main() {
+    Node* root = createSampleTree();
+
+    double start, end;
+
+    cout << "\nSequential BFS: ";
+    start = omp_get_wtime();
+    bfsSequential(root);
+    end = omp_get_wtime();
+    cout << "Time: " << end - start << " seconds\n";
+
+    cout << "\nParallel BFS: ";
+    start = omp_get_wtime();
+    bfsParallel(root);
+    end = omp_get_wtime();
+    cout << "Time: " << end - start << " seconds\n";
+
+    cout << "\nSequential DFS (Preorder): ";
+    start = omp_get_wtime();
+    dfsSequential(root);
+    end = omp_get_wtime();
+    cout << "\nTime: " << end - start << " seconds\n";
+
+    cout << "\nParallel DFS (Preorder): ";
+    start = omp_get_wtime();
+    dfsParallel(root);
+    end = omp_get_wtime();
+    cout << "\nTime: " << end - start << " seconds\n";
+
+    return 0;
+}
+
+
+g++ -fopenmp program.cpp -o program
