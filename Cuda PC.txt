@@ -1,0 +1,155 @@
+#include <iostream>
+#include <cuda.h>
+
+#define N 1000000           // Vector size
+#define M 512               // Matrix size: M x M
+
+// ------------------------ Vector Addition ------------------------ //
+
+__global__ void vectorAdd(float* A, float* B, float* C, int n) {
+    int i = threadIdx.x + blockDim.x * blockIdx.x;
+    if (i < n) C[i] = A[i] + B[i];
+}
+
+void vectorAddCPU(float* A, float* B, float* C, int n) {
+    for (int i = 0; i < n; ++i)
+        C[i] = A[i] + B[i];
+}
+
+// ------------------------ Matrix Multiplication ------------------------ //
+
+__global__ void matrixMulCUDA(float* A, float* B, float* C, int width) {
+    int row = blockIdx.y * blockDim.y + threadIdx.y;
+    int col = blockIdx.x * blockDim.x + threadIdx.x;
+
+    if (row < width && col < width) {
+        float sum = 0;
+        for (int k = 0; k < width; ++k)
+            sum += A[row * width + k] * B[k * width + col];
+        C[row * width + col] = sum;
+    }
+}
+
+void matrixMulCPU(float* A, float* B, float* C, int width) {
+    for (int i = 0; i < width; ++i)
+        for (int j = 0; j < width; ++j) {
+            float sum = 0;
+            for (int k = 0; k < width; ++k)
+                sum += A[i * width + k] * B[k * width + j];
+            C[i * width + j] = sum;
+        }
+}
+
+// ------------------------ Main ------------------------ //
+
+int main() {
+    // ---------------- Vector Addition ---------------- //
+    float *h_A, *h_B, *h_C, *h_C_cpu;
+    float *d_A, *d_B, *d_C;
+
+    size_t bytes = N * sizeof(float);
+
+    h_A = new float[N];
+    h_B = new float[N];
+    h_C = new float[N];
+    h_C_cpu = new float[N];
+
+    for (int i = 0; i < N; ++i) {
+        h_A[i] = 1.0f;
+        h_B[i] = 2.0f;
+    }
+
+    cudaMalloc(&d_A, bytes);
+    cudaMalloc(&d_B, bytes);
+    cudaMalloc(&d_C, bytes);
+
+    cudaMemcpy(d_A, h_A, bytes, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_B, h_B, bytes, cudaMemcpyHostToDevice);
+
+    // Timing GPU vector add
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+
+    cudaEventRecord(start);
+    vectorAdd<<<(N + 255) / 256, 256>>>(d_A, d_B, d_C, N);
+    cudaEventRecord(stop);
+
+    cudaMemcpy(h_C, d_C, bytes, cudaMemcpyDeviceToHost);
+
+    cudaEventSynchronize(stop);
+    float timeGPU;
+    cudaEventElapsedTime(&timeGPU, start, stop);
+
+    // Timing CPU vector add
+    cudaEventRecord(start);
+    vectorAddCPU(h_A, h_B, h_C_cpu, N);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    float timeCPU;
+    cudaEventElapsedTime(&timeCPU, start, stop);
+
+    std::cout << "\n--- Vector Addition ---\n";
+    std::cout << "GPU time: " << timeGPU << " ms\n";
+    std::cout << "CPU time: " << timeCPU << " ms\n";
+
+    // ---------------- Matrix Multiplication ---------------- //
+
+    int size = M * M * sizeof(float);
+    float *matA = new float[M * M];
+    float *matB = new float[M * M];
+    float *matC = new float[M * M];
+    float *matC_cpu = new float[M * M];
+
+    float *d_matA, *d_matB, *d_matC;
+    cudaMalloc(&d_matA, size);
+    cudaMalloc(&d_matB, size);
+    cudaMalloc(&d_matC, size);
+
+    for (int i = 0; i < M * M; ++i) {
+        matA[i] = 1.0f;
+        matB[i] = 2.0f;
+    }
+
+    cudaMemcpy(d_matA, matA, size, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_matB, matB, size, cudaMemcpyHostToDevice);
+
+    dim3 threadsPerBlock(16, 16);
+    dim3 blocksPerGrid((M + 15) / 16, (M + 15) / 16);
+
+    // GPU matrix multiplication
+    cudaEventRecord(start);
+    matrixMulCUDA<<<blocksPerGrid, threadsPerBlock>>>(d_matA, d_matB, d_matC, M);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    float matTimeGPU;
+    cudaEventElapsedTime(&matTimeGPU, start, stop);
+    cudaMemcpy(matC, d_matC, size, cudaMemcpyDeviceToHost);
+
+    // CPU matrix multiplication
+    cudaEventRecord(start);
+    matrixMulCPU(matA, matB, matC_cpu, M);
+    cudaEventRecord(stop);
+    cudaEventSynchronize(stop);
+    float matTimeCPU;
+    cudaEventElapsedTime(&matTimeCPU, start, stop);
+
+    std::cout << "\n--- Matrix Multiplication (" << M << "x" << M << ") ---\n";
+    std::cout << "GPU time: " << matTimeGPU << " ms\n";
+    std::cout << "CPU time: " << matTimeCPU << " ms\n";
+
+    // Clean up
+    delete[] h_A; delete[] h_B; delete[] h_C; delete[] h_C_cpu;
+    delete[] matA; delete[] matB; delete[] matC; delete[] matC_cpu;
+    cudaFree(d_A); cudaFree(d_B); cudaFree(d_C);
+    cudaFree(d_matA); cudaFree(d_matB); cudaFree(d_matC);
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+
+    return 0;
+}
+
+nano vector_matrix_cuda.cu
+nvcc vector_matrix_cuda.cu -o cuda_program
+./cuda_program
